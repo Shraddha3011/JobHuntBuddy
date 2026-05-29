@@ -1,0 +1,9 @@
+# Database files
+*.mv.db
+*.trace.db
+/data/
+backend/data/
+backend/data/
+*.mv.db
+*.lock.db
+*.trace.db

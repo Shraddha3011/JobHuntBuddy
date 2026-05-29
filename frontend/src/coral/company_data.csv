@@ -1,0 +1,12 @@
+company_name,glassdoor_rating,company_size,industry,avg_response_days
+Google,4.5,10000+,Technology,14
+Amazon,3.8,10000+,Technology,21
+TCS,3.5,10000+,IT Services,7
+Infosys,3.4,10000+,IT Services,7
+Flipkart,4.0,5000-10000,E-commerce,10
+Swiggy,3.9,1000-5000,Food Tech,7
+Razorpay,4.3,500-1000,Fintech,5
+Zepto,4.1,500-1000,Quick Commerce,5
+PhonePe,4.0,1000-5000,Fintech,10
+CRED,4.2,500-1000,Fintech,7
+Groww,4.1,500-1000,Fintech,5

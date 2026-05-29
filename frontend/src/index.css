@@ -1,0 +1,153 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-stone-50 text-slate-950 antialiased;
+  }
+
+  * {
+    letter-spacing: 0;
+  }
+}
+
+@layer components {
+  .input {
+    @apply w-full rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-600 focus:ring-4 focus:ring-teal-100;
+  }
+
+  .surface {
+    @apply rounded-[1.35rem] border border-white/70 bg-white/80 shadow-[0_24px_70px_rgba(15,23,42,0.08)] backdrop-blur-xl;
+  }
+
+  .soft-panel {
+    @apply rounded-[1.35rem] border border-slate-200/80 bg-white/75 shadow-[0_18px_50px_rgba(15,23,42,0.06)] backdrop-blur;
+  }
+
+  .action-button {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(15,23,42,0.18)] transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .secondary-button {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white/85 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:-translate-y-0.5 hover:border-teal-200 hover:bg-teal-50;
+  }
+
+  .story-shell {
+    background:
+      radial-gradient(circle at 20% 0%, rgba(20, 184, 166, 0.14), transparent 32rem),
+      radial-gradient(circle at 90% 10%, rgba(245, 158, 11, 0.12), transparent 30rem),
+      linear-gradient(135deg, #f8fafc 0%, #f5f5f4 48%, #ecfeff 100%);
+  }
+
+  .about-radar {
+    position: relative;
+    width: min(100%, 22rem);
+    aspect-ratio: 1;
+    border-radius: 9999px;
+    background:
+      linear-gradient(145deg, rgba(15, 23, 42, 0.94), rgba(15, 118, 110, 0.78)),
+      repeating-linear-gradient(90deg, transparent 0 22px, rgba(255, 255, 255, 0.05) 22px 23px);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), 0 24px 70px rgba(15, 23, 42, 0.16);
+    overflow: hidden;
+  }
+
+  .about-radar-ring,
+  .about-radar-sweep,
+  .about-radar-core,
+  .about-radar-dot {
+    position: absolute;
+  }
+
+  .about-radar-ring {
+    inset: 18%;
+    border: 1px solid rgba(125, 211, 252, 0.34);
+    border-radius: 9999px;
+  }
+
+  .about-radar-ring-one {
+    animation: about-pulse 2.6s ease-in-out infinite;
+  }
+
+  .about-radar-ring-two {
+    inset: 33%;
+    animation: about-pulse 2.6s ease-in-out 0.5s infinite;
+  }
+
+  .about-radar-sweep {
+    inset: 50% 50% 0 0;
+    transform-origin: bottom right;
+    background: linear-gradient(45deg, rgba(45, 212, 191, 0.46), transparent 70%);
+    animation: about-sweep 4.5s linear infinite;
+  }
+
+  .about-radar-core {
+    inset: 50%;
+    display: grid;
+    width: 5.5rem;
+    height: 5.5rem;
+    place-items: center;
+    border-radius: 1.5rem;
+    background: #0f172a;
+    box-shadow: 0 0 0 10px rgba(20, 184, 166, 0.16), 0 16px 40px rgba(15, 23, 42, 0.28);
+    transform: translate(-50%, -50%);
+  }
+
+  .about-radar-dot {
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.9);
+    padding: 0.35rem 0.65rem;
+    color: #0f172a;
+    font-size: 0.75rem;
+    font-weight: 800;
+    animation: about-float 3s ease-in-out infinite;
+  }
+
+  .about-radar-dot-1 { left: 8%; top: 30%; }
+  .about-radar-dot-2 { right: 8%; top: 22%; animation-delay: 0.35s; }
+  .about-radar-dot-3 { bottom: 14%; left: 18%; animation-delay: 0.7s; }
+  .about-radar-dot-4 { bottom: 21%; right: 12%; animation-delay: 1.05s; }
+
+  .about-flow-card {
+    animation: about-rise 650ms ease both;
+  }
+
+  .about-query-panel {
+    position: relative;
+  }
+
+  .about-query-panel::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, transparent, rgba(20, 184, 166, 0.12), transparent);
+    transform: translateY(-100%);
+    animation: about-scan 3.4s ease-in-out infinite;
+    pointer-events: none;
+  }
+}
+
+@keyframes about-pulse {
+  0%, 100% { opacity: 0.38; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.06); }
+}
+
+@keyframes about-sweep {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes about-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes about-rise {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes about-scan {
+  0% { transform: translateY(-100%); }
+  55%, 100% { transform: translateY(100%); }
+}

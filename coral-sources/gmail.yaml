@@ -1,0 +1,101 @@
+name: gmail
+version: 0.1.0
+dsl_version: 3
+backend: http
+
+inputs:
+  GMAIL_API_BASE:
+    kind: variable
+    default: https://gmail.googleapis.com/gmail/v1
+    hint: Gmail API base URL
+  GMAIL_ACCESS_TOKEN:
+    kind: secret
+    hint: OAuth access token with gmail.readonly scope
+
+base_url: "{{input.GMAIL_API_BASE}}"
+
+auth:
+  type: HeaderAuth
+  headers:
+    - name: Authorization
+      from: template
+      template: Bearer {{input.GMAIL_ACCESS_TOKEN}}
+
+functions:
+  - name: search_messages
+    kind: search
+    description: Search Gmail messages using Gmail search syntax.
+    search_limits:
+      default_top_k: 20
+      max_top_k: 500
+      max_calls_per_query: 1
+    args:
+      - name: q
+        required: true
+        bind:
+          arg: q
+      - name: max_results
+        bind:
+          arg: max_results
+    request:
+      method: GET
+      path: /users/me/messages
+      query:
+        - name: q
+          from: arg
+          key: q
+        - name: maxResults
+          from: arg_int
+          key: max_results
+    response:
+      rows_path: [messages]
+      row_strategy: direct
+      allow_404_empty: true
+    columns:
+      - name: id
+        type: Utf8
+        description: Gmail message id.
+      - name: threadId
+        type: Utf8
+        description: Gmail thread id.
+
+  - name: message
+    kind: table
+    description: Fetch one Gmail message by id.
+    args:
+      - name: id
+        required: true
+        bind:
+          arg: id
+    request:
+      method: GET
+      path: /users/me/messages/{{arg.id}}
+      query:
+        - name: format
+          from: literal
+          value: full
+    response:
+      row_strategy: direct
+      allow_404_empty: true
+    columns:
+      - name: id
+        type: Utf8
+      - name: threadId
+        type: Utf8
+      - name: snippet
+        type: Utf8
+      - name: internalDate
+        type: Timestamp
+        expr:
+          kind: format_timestamp
+          input: milliseconds
+          expr:
+            kind: path
+            path: [internalDate]
+      - name: payload
+        type: Json
+      - name: labelIds
+        type: Json
+
+test_queries:
+  - SELECT id FROM gmail.search_messages(q => 'newer_than:7d (applied OR application)', max_results => 1) LIMIT 1
