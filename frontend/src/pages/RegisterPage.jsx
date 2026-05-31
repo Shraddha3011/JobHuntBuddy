@@ -285,12 +285,12 @@ body {
 }
 
         /* Glass morphism */
-// .glass-panel {
-//   background: rgba(2, 6, 23, 0.95);
-//   border: 1px solid rgba(16,185,129,0.15);
-//   box-shadow:
-//     0 20px 80px rgba(0,0,0,0.45);
-// }
+.glass-panel {
+  // background: rgba(2, 6, 23, 0.95);
+  border: 1px solid rgba(16,185,129,0.15);
+  // box-shadow:
+  //   0 20px 80px rgba(0,0,0,0.45);
+}
 
         /* Journey visualization */
         .journey-timeline {

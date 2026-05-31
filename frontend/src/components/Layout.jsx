@@ -1,5 +1,6 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
+import logo from '../assets/logo.png';
 import {
   BarChart3,
   Bot,
@@ -429,6 +430,55 @@ export default function Layout({ children }) {
           overflow-auto;
           animation: fadeIn 0.5s ease;
         }
+          .logo-section {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 280px;
+}
+
+.logo-image-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.navbar-logo {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  transition: all 0.35s ease;
+}
+
+.navbar-logo:hover {
+  transform: scale(1.08) rotate(-3deg);
+}
+
+.logo-text {
+  text-decoration: none;
+}
+
+.logo-text h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 900;
+  color: white;
+  letter-spacing: -1px;
+  line-height: 1;
+}
+
+.logo-text h1 span {
+  color: #10b981;
+}
+
+.logo-text p {
+  margin-top: 4px;
+  font-size: 11px;
+  color: rgba(148, 163, 184, 0.8);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
       `}</style>
 
       {/* Top Navbar */}
@@ -436,15 +486,23 @@ export default function Layout({ children }) {
         <div className="nav-wrapper">
           <div className="nav-inner">
             {/* Logo Section */}
-            <div className="logo-section">
-              <Link to="/" className="logo-badge">
-                <HeartHandshake className="w-6 h-6" />
-              </Link>
-              <Link to="/" className="logo-text">
-                <h1>JobHuntBuddy</h1>
-                <p>AI-POWERED JOB SEARCH</p>
-              </Link>
-            </div>
+{/* Logo Section */}
+<div className="logo-section">
+  <Link to="/" className="logo-image-link">
+    <img
+      src={logo}
+      alt="JobHuntBuddy"
+      className="navbar-logo"
+    />
+  </Link>
+
+  <Link to="/" className="logo-text">
+    <h1>
+      Job<span>Hunt</span>Buddy
+    </h1>
+    <p>Your AI companion for every application</p>
+  </Link>
+</div>
 
             {/* Center Navigation */}
             <div className="nav-center">

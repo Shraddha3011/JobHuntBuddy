@@ -677,7 +677,7 @@ body {
   className="smart-input w-full"
   style={{
     fontSize: showPassword ? "18px" : "18px",
-    letterSpacing: showPassword ? "normal" : "6px",
+    // letterSpacing: showPassword ? "normal" : "6px",
     paddingRight: "55px"
   }}
   value={form.password}
