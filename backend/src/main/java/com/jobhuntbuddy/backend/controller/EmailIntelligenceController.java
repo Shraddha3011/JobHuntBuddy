@@ -8,6 +8,8 @@ import com.jobhuntbuddy.backend.entity.User;
 import com.jobhuntbuddy.backend.repository.JobApplicationRepository;
 import com.jobhuntbuddy.backend.service.CoralRunner;
 import com.jobhuntbuddy.backend.service.GmailConnectionService;
+import com.jobhuntbuddy.backend.service.AsyncInferenceService;
+import com.jobhuntbuddy.backend.service.CacheService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
@@ -34,29 +36,16 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/agent/email")
 @RequiredArgsConstructor
 public class EmailIntelligenceController {
-    // Avoid double quotes inside the SQL string — Windows Coral CLI can split on them.
-    private static final String JOB_EMAIL_QUERY =
-            "newer_than:365d (application OR applied OR applying OR submitted OR sent OR received OR interview OR assessment OR unfortunately OR offer OR shortlisted OR rejected OR recruiter OR hiring OR career OR job OR linkedin)";
-    private static final List<String> GMAIL_API_QUERIES = List.of(
-            JOB_EMAIL_QUERY,
-            "newer_than:365d (\"your application was sent\" OR \"application was sent to\" OR \"thank you again for applying\" OR \"thank you for applying\" OR \"thank you for your interest\" OR \"we received\" OR \"has been submitted\" OR \"application status\")",
-            "newer_than:365d (\"not be moving forward\" OR \"not moving forward\" OR \"decided not to progress\" OR \"not selected\" OR \"unable to proceed\" OR \"next steps\" OR \"coding challenge\" OR \"online assessment\")",
-            "newer_than:365d (\"new jobs similar to\" OR \"apply now to\" OR invitation)",
-            "newer_than:365d (from:linkedin OR from:greenhouse OR from:lever OR from:workday OR from:ashby OR from:smartrecruiters OR from:successfactors)"
-    );
-    private static final List<String> CORAL_GMAIL_QUERIES = List.of(
-            "in:anywhere newer_than:365d",
-            "in:anywhere newer_than:365d (application OR applied OR submitted OR interview OR assessment OR unfortunately OR recruiter OR hiring OR job)",
-            "in:anywhere newer_than:365d (\"your application was sent\" OR \"application was sent to\" OR \"thank you again for applying\" OR \"thank you for applying\")",
-            "in:anywhere newer_than:365d (\"not be moving forward\" OR \"not moving forward\" OR \"decided not to progress\" OR \"unable to proceed\")",
-            "in:anywhere newer_than:365d (\"new jobs similar to\" OR \"apply now to\" OR invitation)",
-            "in:anywhere newer_than:365d from:linkedin"
-    );
+    // SINGLE optimized query - searches 365 days with job keywords
+    private static final String OPTIMIZED_CORAL_QUERY =
+            "newer_than:365d";
 
     private final JobApplicationRepository appRepo;
     private final ObjectMapper objectMapper;
     private final GmailConnectionService gmailConnectionService;
     private final CoralRunner coralRunner;
+    private final AsyncInferenceService asyncInferenceService;
+    private final CacheService cacheService;
     private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
 
     @Value("${google.oauth.client-id:}")
@@ -78,6 +67,7 @@ public class EmailIntelligenceController {
                                                        @RequestBody GmailConnectRequest body) {
         String accessToken = body == null ? "" : body.accessToken();
         GmailConnectionService.ConnectResult result = gmailConnectionService.connect(user, accessToken);
+        cacheService.invalidate("gmail_" + user.getId()); // Clear cache on reconnect
         return ResponseEntity.ok(Map.of(
                 "connected", result.connected(),
                 "message", result.message()
@@ -87,6 +77,7 @@ public class EmailIntelligenceController {
     @DeleteMapping("/connect")
     public ResponseEntity<Map<String, Object>> disconnect(@AuthenticationPrincipal User user) {
         gmailConnectionService.disconnect(user);
+        cacheService.invalidate("gmail_" + user.getId());
         return ResponseEntity.ok(Map.of("connected", false, "message", "Gmail disconnected."));
     }
 
@@ -94,11 +85,20 @@ public class EmailIntelligenceController {
     public ResponseEntity<Map<String, Object>> preview(@AuthenticationPrincipal User user,
                                                        @RequestParam(defaultValue = "25") int limit,
                                                        @RequestParam(defaultValue = "0") int offset) {
+        System.out.println("PREVIEW API HIT");
         if (!gmailConnectionService.isConnected(user)) {
             return ResponseEntity.ok(notConnectedResponse());
         }
 
-        EmailScan scan = scanGmail(user, limit, offset);
+        String cacheKey = "gmail_" + user.getId() + "_" + offset + "_" + limit;
+        Map<String, Object> cached = cacheService.get(cacheKey);
+        if (cached != null) {
+            return ResponseEntity.ok(cached);
+        }
+
+        // Fast path: return first 5 inferred with full content, rest queued for async inference
+        EmailScan scan = scanGmailFast(user, limit, offset);
+
         if (!scan.available()) {
             return ResponseEntity.ok(Map.of(
                     "connected", false,
@@ -107,21 +107,33 @@ public class EmailIntelligenceController {
                             || scan.error().toLowerCase(Locale.ROOT).contains("403")
             ));
         }
+
         List<InferredApplication> inferred = scan.inferred();
-        return ResponseEntity.ok(Map.of(
+        Map<String, Object> response = Map.of(
                 "connected", true,
                 "emailsScanned", scan.emails().size(),
                 "emails", scan.emails(),
                 "inferred", inferred,
                 "overview", overview(inferred),
                 "existingApplications", appRepo.findByUserId(user.getId()).size()
-        ));
+        );
+
+        // Cache for 5 minutes
+        cacheService.set(cacheKey, response, 300);
+
+        // Queue remaining for background inference
+        if (inferred.size() < scan.allEmails().size()) {
+            asyncInferenceService.inferInBackground(user, scan.allEmails().subList(inferred.size(), Math.min(inferred.size() + 20, scan.allEmails().size())));
+        }
+
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/sync")
     public ResponseEntity<Map<String, Object>> sync(@AuthenticationPrincipal User user,
                                                     @RequestParam(defaultValue = "25") int limit,
                                                     @RequestParam(defaultValue = "0") int offset) {
+        System.out.println("SYNC API HIT");
         if (!gmailConnectionService.isConnected(user)) {
             return ResponseEntity.ok(Map.of(
                     "connected", false,
@@ -131,7 +143,7 @@ public class EmailIntelligenceController {
             ));
         }
 
-        EmailScan scan = scanGmail(user, limit, offset);
+        EmailScan scan = scanGmailFast(user, limit, offset);
         if (!scan.available()) {
             return ResponseEntity.ok(Map.of(
                     "connected", false,
@@ -167,6 +179,8 @@ public class EmailIntelligenceController {
             existing.add(app);
         }
 
+        cacheService.invalidate("gmail_" + user.getId());
+
         return ResponseEntity.ok(Map.of(
                 "connected", true,
                 "imported", imported.size(),
@@ -175,6 +189,149 @@ public class EmailIntelligenceController {
                 "inferred", scan.inferred(),
                 "overview", overview(scan.inferred())
         ));
+    }
+
+    private EmailScan scanGmailFast(User user, int requestedLimit, int requestedOffset) {
+        Optional<String> token = gmailConnectionService.findToken(user);
+        if (token.isEmpty()) {
+            return new EmailScan(false, "Gmail is not connected for this account.", List.of(), List.of());
+        }
+
+        int limit = requestedLimit;
+        int offset = Math.max(0, requestedOffset);
+        Map<String, String> env = gmailConnectionService.gmailEnv(token.get());
+        List<RawEmail> emails =
+                Collections.synchronizedList(new ArrayList<>());
+
+        List<InferredApplication> inferred =
+                Collections.synchronizedList(new ArrayList<>());
+
+        List<Map<String, Object>> allRawMessages =
+                Collections.synchronizedList(new ArrayList<>());
+
+        try {
+            // SINGLE query - much faster
+            CoralRunner.CoralCommandResult idsResult = coralRunner.runSqlJson(
+                    "SELECT id FROM gmail.search_messages(q => '" +
+                            escapeSql(OPTIMIZED_CORAL_QUERY) +
+                            "', max_results => 1000)",
+                    env
+            );
+
+            if (!idsResult.success()) {
+                System.out.println("CORAL FAILED - USING GMAIL API FALLBACK");
+                System.out.println(idsResult.output());
+                return scanGmailApiFast(token.get());
+            }
+
+            List<Map<String, Object>> rows = objectMapper.readValue(idsResult.output(), new TypeReference<>() {});
+            System.out.println("=================================");
+            System.out.println("TOTAL IDS FOUND = " + rows.size());
+            System.out.println("REQUESTED LIMIT = " + requestedLimit);
+            System.out.println("REQUESTED OFFSET = " + requestedOffset);
+            System.out.println("=================================");
+            Set<String> ids = new LinkedHashSet<>();
+            for (Map<String, Object> row : rows) {
+                String id = value(row.get("id"));
+                if (!id.isBlank()) ids.add(id);
+            }
+
+            if (ids.isEmpty()) {
+                return scanGmailApiFast(token.get());
+            }
+            System.out.println("TOTAL IDS FOUND = " + ids.size());
+            System.out.println("OFFSET = " + offset);
+            System.out.println("LIMIT = " + limit);
+
+            List<String> batchIds = ids.stream()
+                    .skip(offset)
+                    .limit(limit)
+                    .toList();
+
+            System.out.println("BATCH IDS RETURNED = " + batchIds.size());
+            System.out.println("BATCH IDS RETURNED = " + batchIds.size());
+
+            // Fetch all messages in batch
+            batchIds.parallelStream().forEach(id -> {
+                try {
+                    CoralRunner.CoralCommandResult messageResult = coralRunner.runSqlJson(
+                            "SELECT id, snippet, \"internalDate\", payload FROM gmail.message(id => '" + escapeSql(id) + "')",
+                            env
+                    );
+                    if (messageResult.success()) {
+                        List<Map<String, Object>> messages = objectMapper.readValue(messageResult.output(), new TypeReference<>() {});
+                        if (!messages.isEmpty()) {
+                            Map<String, Object> message = messages.get(0);
+                            allRawMessages.add(message);
+                            Optional<InferredApplication> inferredApp = infer(message);
+                            emails.add(rawEmail(message, inferredApp.isPresent()));
+                            inferredApp.ifPresent(inferred::add);
+                        }
+                    }
+                } catch (Exception ignored) {}
+            });
+
+            if (emails.isEmpty()) {
+                return scanGmailApiFast(token.get());
+            }
+
+            List<InferredApplication> sorted = inferred.stream()
+                    .sorted(Comparator.comparing(InferredApplication::date, Comparator.nullsLast(Comparator.reverseOrder())))
+                    .toList();
+
+            return new EmailScan(true, null, sorted, emails, allRawMessages);
+        } catch (Exception e) {
+            return new EmailScan(false, "Coral error: " + e.getMessage(), List.of(), emails, allRawMessages);
+        }
+    }
+
+    private EmailScan scanGmailApiFast(String accessToken) {
+        try {
+            List<String> messageIds = new ArrayList<>();
+            List<InferredApplication> inferred = new ArrayList<>();
+            List<RawEmail> emails = new ArrayList<>();
+            List<Map<String, Object>> allRawMessages = new ArrayList<>();
+
+            // Fetch first 50 messages only (fast)
+            String listUrl =
+                    "https://gmail.googleapis.com/gmail/v1/users/me/messages?q=newer_than:1y&maxResults=500";
+            HttpResponse<String> listResponse = sendGmailGet(listUrl, accessToken);
+
+            if (listResponse.statusCode() == 200) {
+                JsonNode root = objectMapper.readTree(listResponse.body());
+                for (JsonNode messageRef : root.path("messages")) {
+                    messageIds.add(messageRef.path("id").asText(""));
+                }
+            }
+
+            // Fetch message details
+            for (String id : messageIds) {
+                try {
+                    String messageUrl = "https://gmail.googleapis.com/gmail/v1/users/me/messages/" + id + "?format=full";
+                    HttpResponse<String> messageResponse = sendGmailGet(messageUrl, accessToken);
+                    if (messageResponse.statusCode() == 200) {
+                        JsonNode message = objectMapper.readTree(messageResponse.body());
+                        Map<String, Object> row = new HashMap<>();
+                        row.put("id", message.path("id").asText(""));
+                        row.put("snippet", message.path("snippet").asText(""));
+                        row.put("internalDate", message.path("internalDate").asText(""));
+                        row.put("payload", message.path("payload").toString());
+
+                        allRawMessages.add(row);
+                        Optional<InferredApplication> inferredApp = infer(row);
+                        emails.add(rawEmail(row, inferredApp.isPresent()));
+                        inferredApp.ifPresent(inferred::add);
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            List<InferredApplication> sorted = inferred.stream()
+                    .sorted(Comparator.comparing(InferredApplication::date, Comparator.nullsLast(Comparator.reverseOrder())))
+                    .toList();
+            return new EmailScan(true, null, sorted, emails, allRawMessages);
+        } catch (Exception e) {
+            return new EmailScan(false, e.getMessage(), List.of(), List.of(), List.of());
+        }
     }
 
     private Map<String, Object> notConnectedResponse() {
@@ -187,140 +344,6 @@ public class EmailIntelligenceController {
         );
     }
 
-    private EmailScan scanGmail(User user, int requestedLimit, int requestedOffset) {
-        Optional<String> token = gmailConnectionService.findToken(user);
-        if (token.isEmpty()) {
-            return new EmailScan(false, "Gmail is not connected for this account.", List.of(), List.of());
-        }
-
-        int limit = Math.max(1, Math.min(requestedLimit, 50));
-        int offset = Math.max(0, requestedOffset);
-        Map<String, String> env = gmailConnectionService.gmailEnv(token.get());
-        List<RawEmail> emails = new ArrayList<>();
-        List<InferredApplication> inferred = new ArrayList<>();
-        try {
-            Set<String> ids = new LinkedHashSet<>();
-            String lastError = "";
-            for (String query : CORAL_GMAIL_QUERIES) {
-                CoralRunner.CoralCommandResult idsResult = coralRunner.runSqlJson(
-                        "SELECT id FROM gmail.search_messages(q => '" + escapeSql(query) + "', max_results => 100)",
-                        env
-                );
-                if (!idsResult.success()) {
-                    lastError = idsResult.output();
-                    continue;
-                }
-                List<Map<String, Object>> rows = objectMapper.readValue(idsResult.output(), new TypeReference<>() {});
-                for (Map<String, Object> row : rows) {
-                    String id = value(row.get("id"));
-                    if (!id.isBlank()) ids.add(id);
-                }
-            }
-            if (ids.isEmpty() && !lastError.isBlank()) {
-                EmailScan apiScan = scanGmailApi(token.get());
-                return apiScan.available() ? apiScan : new EmailScan(false, friendlyCoralError(lastError), List.of(), List.of());
-            }
-            if (ids.isEmpty()) {
-                return scanGmailApi(token.get());
-            }
-
-            List<String> batchIds = ids.stream().skip(offset).limit(limit).toList();
-            for (String id : batchIds) {
-                CoralRunner.CoralCommandResult messageResult = coralRunner.runSqlJson(
-                        "SELECT id, snippet, \"internalDate\", payload FROM gmail.message(id => '" + escapeSql(id) + "')",
-                        env
-                );
-                if (!messageResult.success()) continue;
-                List<Map<String, Object>> messages = objectMapper.readValue(messageResult.output(), new TypeReference<>() {});
-                for (Map<String, Object> message : messages) {
-                    Optional<InferredApplication> inferredApplication = infer(message);
-                    emails.add(rawEmail(message, inferredApplication.isPresent()));
-                    inferredApplication.ifPresent(inferred::add);
-                }
-            }
-            if (!ids.isEmpty() && emails.isEmpty()) {
-                return scanGmailApi(token.get());
-            }
-        } catch (Exception e) {
-            return new EmailScan(false, "Could not parse Coral Gmail result: " + e.getMessage(), List.of(), emails);
-        }
-
-        List<InferredApplication> sorted = inferred.stream()
-                .sorted(Comparator.comparing(InferredApplication::date, Comparator.nullsLast(Comparator.reverseOrder())))
-                .toList();
-        return new EmailScan(true, null, sorted, emails);
-    }
-
-    private EmailScan scanGmailApi(String accessToken) {
-        try {
-            Set<String> messageIds = new LinkedHashSet<>();
-            String pageToken = "";
-            while (messageIds.size() < 500) {
-                String listUrl = "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=100"
-                        + (pageToken.isBlank() ? "" : "&pageToken=" + URLEncoder.encode(pageToken, StandardCharsets.UTF_8));
-                HttpResponse<String> listResponse = sendGmailGet(listUrl, accessToken);
-                if (listResponse.statusCode() != 200) {
-                    return new EmailScan(false, "Gmail API returned HTTP " + listResponse.statusCode() + ".", List.of(), List.of());
-                }
-                JsonNode root = objectMapper.readTree(listResponse.body());
-                for (JsonNode messageRef : root.path("messages")) {
-                    String id = messageRef.path("id").asText("");
-                    if (!id.isBlank()) {
-                        messageIds.add(id);
-                    }
-                }
-                pageToken = root.path("nextPageToken").asText("");
-                if (pageToken.isBlank()) {
-                    break;
-                }
-            }
-
-            for (String rawQuery : GMAIL_API_QUERIES) {
-                String query = URLEncoder.encode(rawQuery, StandardCharsets.UTF_8);
-                String listUrl = "https://gmail.googleapis.com/gmail/v1/users/me/messages?q=" + query + "&maxResults=100";
-                HttpResponse<String> listResponse = sendGmailGet(listUrl, accessToken);
-                if (listResponse.statusCode() != 200) {
-                    if (listResponse.statusCode() == 401 || listResponse.statusCode() == 403) {
-                        return new EmailScan(false, "Gmail API returned HTTP " + listResponse.statusCode() + ".", List.of(), List.of());
-                    }
-                    continue;
-                }
-                JsonNode messages = objectMapper.readTree(listResponse.body()).path("messages");
-                for (JsonNode messageRef : messages) {
-                    String id = messageRef.path("id").asText("");
-                    if (!id.isBlank()) {
-                        messageIds.add(id);
-                    }
-                }
-            }
-
-            List<InferredApplication> inferred = new ArrayList<>();
-            List<RawEmail> emails = new ArrayList<>();
-            for (String id : messageIds) {
-                String messageUrl = "https://gmail.googleapis.com/gmail/v1/users/me/messages/" + id + "?format=full";
-                HttpResponse<String> messageResponse = sendGmailGet(messageUrl, accessToken);
-                if (messageResponse.statusCode() != 200) continue;
-
-                JsonNode message = objectMapper.readTree(messageResponse.body());
-                Map<String, Object> row = new HashMap<>();
-                row.put("id", message.path("id").asText(""));
-                row.put("snippet", message.path("snippet").asText(""));
-                row.put("internalDate", message.path("internalDate").asText(""));
-                row.put("payload", message.path("payload").toString());
-                Optional<InferredApplication> inferredApplication = infer(row);
-                emails.add(rawEmail(row, inferredApplication.isPresent()));
-                inferredApplication.ifPresent(inferred::add);
-            }
-
-            List<InferredApplication> sorted = inferred.stream()
-                    .sorted(Comparator.comparing(InferredApplication::date, Comparator.nullsLast(Comparator.reverseOrder())))
-                    .toList();
-            return new EmailScan(true, null, sorted, emails);
-        } catch (Exception e) {
-            return new EmailScan(false, e.getMessage(), List.of(), List.of());
-        }
-    }
-
     private HttpResponse<String> sendGmailGet(String url, String accessToken) throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
@@ -331,32 +354,12 @@ public class EmailIntelligenceController {
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
-    private Optional<ParsedEmail> fetchGmailMetadata(String accessToken, String id) {
-        try {
-            String messageUrl = "https://gmail.googleapis.com/gmail/v1/users/me/messages/" + id
-                    + "?format=metadata&metadataHeaders=Subject&metadataHeaders=From";
-            HttpResponse<String> messageResponse = sendGmailGet(messageUrl, accessToken);
-            if (messageResponse.statusCode() != 200) return Optional.empty();
-
-            JsonNode message = objectMapper.readTree(messageResponse.body());
-            Map<String, Object> row = new HashMap<>();
-            row.put("id", message.path("id").asText(""));
-            row.put("snippet", message.path("snippet").asText(""));
-            row.put("internalDate", message.path("internalDate").asText(""));
-            row.put("payload", message.path("payload").toString());
-            Optional<InferredApplication> inferredApplication = infer(row);
-            return Optional.of(new ParsedEmail(rawEmail(row, inferredApplication.isPresent()), inferredApplication));
-        } catch (Exception ignored) {
-            return Optional.empty();
-        }
-    }
-
     private RawEmail rawEmail(Map<String, Object> message, boolean matchedJobEmail) {
         Object payload = message.get("payload");
         return new RawEmail(
                 inferDate(message.get("internalDate")),
                 header(payload, "Subject"),
-                emailContent(payload, value(message.get("snippet")))
+                value(message.get("snippet"))
         );
     }
 
@@ -366,7 +369,7 @@ public class EmailIntelligenceController {
             List<String> parts = new ArrayList<>();
             collectBodyText(payloadNode, parts);
             String joined = String.join("\n", parts).replaceAll("<[^>]+>", " ").replaceAll("\\s+", " ").trim();
-            return joined.isBlank() ? fallback : joined;
+            return joined.isBlank() ? fallback : joined.substring(0, Math.min(500, joined.length()));
         } catch (Exception ignored) {
             return fallback;
         }
@@ -380,27 +383,11 @@ public class EmailIntelligenceController {
                 byte[] decoded = Base64.getUrlDecoder().decode(data);
                 String text = new String(decoded, StandardCharsets.UTF_8).trim();
                 if (!text.isBlank()) parts.add(text);
-            } catch (IllegalArgumentException ignored) {
-                // Some Gmail payloads omit body data or use nested parts only.
-            }
+            } catch (IllegalArgumentException ignored) {}
         }
         for (JsonNode part : node.path("parts")) {
             collectBodyText(part, parts);
         }
-    }
-
-    private String friendlyCoralError(String output) {
-        if (output == null || output.isBlank()) {
-            return "Coral could not query Gmail. Try reconnecting your account.";
-        }
-        String trimmed = output.trim();
-        if (trimmed.contains("unexpected argument 'you'")) {
-            return "Coral command failed due to a shell quoting issue. Reconnect Gmail from this page and try again.";
-        }
-        if (trimmed.toLowerCase(Locale.ROOT).contains("not available on path")) {
-            return "Coral CLI is not installed on the server. Install Coral and restart the backend.";
-        }
-        return trimmed.length() > 500 ? trimmed.substring(0, 500) + "..." : trimmed;
     }
 
     private Optional<InferredApplication> infer(Map<String, Object> message) {
@@ -408,52 +395,152 @@ public class EmailIntelligenceController {
         Object payload = message.get("payload");
         String subject = header(payload, "Subject");
         String from = header(payload, "From");
-        String content = emailContent(payload, snippet);
         String joined = (subject + " " + snippet).trim();
-        if (joined.isBlank()) return Optional.empty();
-        if (isBlockedEmail(subject, from)) return Optional.empty();
-        if (!looksLikeJobEmail(joined, from)) return Optional.empty();
 
+        if (joined.isBlank()) {
+            return Optional.empty();
+        }
+
+        if (isBlockedEmail(subject, from)) {
+            return Optional.empty();
+        }
+
+        if (isRecommendationEmail(subject)) {
+            return Optional.empty();
+        }
+
+        if (!looksLikeJobEmail(joined, from)) {
+            return Optional.empty();
+        }
         Status status = inferStatus(joined);
         String company = inferCompany(subject, from, snippet);
         String title = inferTitle(subject, snippet);
         Platform platform = joined.toLowerCase(Locale.ROOT).contains("linkedin") ? Platform.LINKEDIN : Platform.COMPANY_WEBSITE;
         LocalDate date = inferDate(message.get("internalDate"));
-
-        return Optional.of(new InferredApplication(company, title, status, platform, date, subject, from, snippet, content));
+        return Optional.of(
+                new InferredApplication(
+                        company,
+                        title,
+                        status,
+                        platform,
+                        date,
+                        subject,
+                        from,
+                        snippet,
+                        emailContent(payload, snippet)
+                )
+        );
     }
 
     private boolean looksLikeJobEmail(String text, String from) {
+
         String lower = (text + " " + from).toLowerCase(Locale.ROOT);
+
+        boolean recruiterDomain =
+                containsAny(lower,
+                        "greenhouse.io",
+                        "lever.co",
+                        "ashbyhq.com",
+                        "myworkdayjobs",
+                        "workday.com",
+                        "smartrecruiters.com",
+                        "icims.com",
+                        "successfactors.com",
+                        "talent",
+                        "recruiting",
+                        "careers");
+
+        boolean positive =
+                containsAny(lower,
+                        "thank you for applying",
+                        "application received",
+                        "application submitted",
+                        "your application",
+                        "candidate",
+                        "recruiter",
+                        "interview invitation",
+                        "interview scheduled",
+                        "interview round",
+                        "technical interview",
+                        "assessment invitation",
+                        "coding assessment",
+                        "online assessment",
+                        "offer letter",
+                        "job offer",
+                        "congratulations",
+                        "not selected",
+                        "rejection",
+                        "unable to proceed",
+                        "moving forward");
+
+        boolean negative =
+                containsAny(lower,
+                        "weekly digest",
+                        "daily digest",
+                        "newsletter",
+                        "recommended jobs",
+                        "jobs you may be interested in",
+                        "new jobs for you",
+                        "job alert",
+                        "similar jobs",
+                        "linkedin news",
+                        "career advice",
+                        "learning course",
+                        "webinar",
+                        "event invitation",
+                        "marketing",
+                        "promotional",
+                        "subscription",
+                        "follow company",
+                        "people viewed your profile",
+                        "linkedin premium",
+                        "apply now");
+
+        return (positive || recruiterDomain) && !negative;
+    }
+    private boolean isRecommendationEmail(String subject) {
+
+        String lower = subject.toLowerCase(Locale.ROOT);
+
         return containsAny(lower,
-                "application", "applied", "applying", "submitted", "sent", "thank you for your interest",
-                "thank you for applying", "thank you again for applying", "your application was sent",
-                "application was sent to", "we received", "interview", "assessment", "coding challenge",
-                "recruiter", "hiring", "career", "job", "offer", "shortlisted", "not selected",
-                "unfortunately", "unable to proceed", "not be moving forward", "not moving forward",
-                "decided not to progress", "greenhouse", "lever", "workday", "ashby",
-                "smartrecruiters", "successfactors", "linkedin", "new jobs similar to", "apply now to",
-                "invitation");
+                "recommended jobs",
+                "jobs you may be interested in",
+                "job alert",
+                "new jobs for you",
+                "weekly jobs",
+                "daily jobs",
+                "similar jobs",
+                "linkedin jobs",
+                "career advice");
     }
 
     private Status inferStatus(String text) {
         String lower = text.toLowerCase(Locale.ROOT);
         if (containsAny(lower, "offer", "congratulations")) return Status.OFFER;
-        if (containsAny(lower,
-                "not selected", "unfortunately", "regret", "unable to proceed",
-                "moving forward with other candidates", "not be moving forward",
-                "not moving forward", "decided not to progress", "not to progress",
-                "will not be progressing")) return Status.REJECTED;
-        if (containsAny(lower, "invitation")) return Status.OA;
+        if (containsAny(lower, "not selected", "unfortunately", "unable to proceed", "not moving forward", "we won't be moving forward")) return Status.REJECTED;
+        if (containsAny(lower, "invitation","shortlisted")) return Status.OA;
         if (containsAny(lower, "new jobs similar to", "apply now to")) return Status.HIRING;
-        if (containsAny(lower, "interview", "next step", "next steps", "assessment", "coding challenge", "online assessment")) return Status.INTERVIEW;
+        if (containsAny(lower, "interview", "assessment", "coding challenge")) return Status.INTERVIEW;
         return Status.APPLIED;
     }
 
     private boolean isBlockedEmail(String subject, String from) {
+
         String lowerSubject = subject.toLowerCase(Locale.ROOT);
         String lowerFrom = from.toLowerCase(Locale.ROOT);
-        return lowerFrom.contains("no-reply@leetcode.com") && lowerSubject.contains("leetcode weekly digest");
+
+        return
+
+                lowerSubject.contains("weekly digest")
+                        || lowerSubject.contains("daily digest")
+                        || lowerSubject.contains("newsletter")
+                        || lowerSubject.contains("linkedin premium")
+                        || lowerSubject.contains("career advice")
+                        || lowerSubject.contains("people viewed your profile")
+                        || lowerFrom.contains("marketing")
+                        || lowerFrom.contains("newsletter")
+                        || (lowerFrom.contains("leetcode.com")
+                        && lowerSubject.contains("digest"));
     }
 
     private String inferCompany(String subject, String from, String snippet) {
@@ -461,9 +548,7 @@ public class EmailIntelligenceController {
         List<Pattern> patterns = List.of(
                 Pattern.compile("(?i)your application was sent to ([A-Z][A-Za-z0-9 .&-]{2,40})"),
                 Pattern.compile("(?i)application was sent to ([A-Z][A-Za-z0-9 .&-]{2,40})"),
-                Pattern.compile("(?i)your application (?:to|at|for) ([A-Z][A-Za-z0-9 .&-]{2,40})"),
-                Pattern.compile("(?i)thank you for applying to ([A-Z][A-Za-z0-9 .&-]{2,40})"),
-                Pattern.compile("(?i)application (?:received|submitted).*?([A-Z][A-Za-z0-9 .&-]{2,40})")
+                Pattern.compile("(?i)thank you for applying to ([A-Z][A-Za-z0-9 .&-]{2,40})")
         );
         for (Pattern pattern : patterns) {
             var matcher = pattern.matcher(text);
@@ -474,20 +559,20 @@ public class EmailIntelligenceController {
             String domain = emailDomain.split("\\.")[0].replace("-", " ");
             if (!domain.equalsIgnoreCase("mail") && !domain.equalsIgnoreCase("linkedin")) return titleCase(domain);
         }
-        return "Unknown company";
+        return "Unknown";
     }
 
     private String inferTitle(String subject, String snippet) {
         String text = subject + " " + snippet;
         List<Pattern> patterns = List.of(
-                Pattern.compile("(?i)(?:for|as|role:)\\s+([A-Za-z0-9 /+-]{3,60}(?:engineer|developer|analyst|intern|manager|designer|consultant|scientist))"),
-                Pattern.compile("(?i)([A-Za-z0-9 /+-]{3,60}(?:engineer|developer|analyst|intern|manager|designer|consultant|scientist))")
+                Pattern.compile("(?i)(?:for|as)\\s+([A-Za-z0-9 /+-]{3,60}(?:engineer|developer|analyst|manager|designer))"),
+                Pattern.compile("(?i)([A-Za-z0-9 /+-]{3,60}(?:engineer|developer))")
         );
         for (Pattern pattern : patterns) {
             var matcher = pattern.matcher(text);
             if (matcher.find()) return clean(matcher.group(1));
         }
-        return "Role from email";
+        return "Job role";
     }
 
     @SuppressWarnings("unchecked")
@@ -512,9 +597,7 @@ public class EmailIntelligenceController {
             for (JsonNode header : headers) {
                 if (name.equalsIgnoreCase(header.path("name").asText())) return header.path("value").asText("");
             }
-        } catch (Exception ignored) {
-            return "";
-        }
+        } catch (Exception ignored) {}
         return "";
     }
 
@@ -575,9 +658,12 @@ public class EmailIntelligenceController {
         return value == null ? "" : String.valueOf(value);
     }
 
-    private record EmailScan(boolean available, String error, List<InferredApplication> inferred, List<RawEmail> emails) {}
+    private record EmailScan(boolean available, String error, List<InferredApplication> inferred, List<RawEmail> emails, List<Map<String, Object>> allEmails) {
+        public EmailScan(boolean available, String error, List<InferredApplication> inferred, List<RawEmail> emails) {
+            this(available, error, inferred, emails, new ArrayList<>());
+        }
+    }
     private record RawEmail(LocalDate date, String subject, String content) {}
-    private record ParsedEmail(RawEmail rawEmail, Optional<InferredApplication> inferredApplication) {}
     private record InferredApplication(String companyName, String jobTitle, Status status, Platform platform, LocalDate date,
                                        String subject, String from, String snippet, String content) {}
 }

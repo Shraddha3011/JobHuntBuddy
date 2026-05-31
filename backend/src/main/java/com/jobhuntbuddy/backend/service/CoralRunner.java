@@ -16,6 +16,12 @@ public class CoralRunner {
     @Value("${coral.gmail.source.file:}")
     private String gmailSourceFile;
 
+    @Value("${coral.google-drive.source.file:}")
+    private String googleDriveSourceFile;
+
+    @Value("${coral.jobhuntbuddy.source.file:}")
+    private String jobHuntBuddySourceFile;
+
     public CoralCommandResult run(List<String> args, Map<String, String> env, long timeoutSeconds) {
         try {
             List<String> command = new ArrayList<>();
@@ -50,38 +56,105 @@ public class CoralRunner {
         return new CoralCommandResult(jsonArray, result.output(), result.exitCode());
     }
 
+    public CoralCommandResult runSqlTable(String sql, Map<String, String> env) {
+        return run(List.of("sql", "--format", "table", sql), env, 20);
+    }
+
+    public CoralCommandResult version() {
+        return run(List.of("--version"), null, 8);
+    }
+
+    public CoralCommandResult listSources() {
+        return run(List.of("source", "list"), null, 10);
+    }
+
+    public CoralCommandResult discoverSources() {
+        return run(List.of("source", "discover"), null, 12);
+    }
+
+    public CoralCommandResult sourceInfo(String name) {
+        return run(List.of("source", "info", name), null, 10);
+    }
+
     public CoralCommandResult removeGmailSource() {
-        return run(List.of("source", "remove", "gmail"), null, 15);
+        return removeSource("gmail");
     }
 
     public CoralCommandResult addGmailSource(Map<String, String> env) {
-        Path sourcePath = resolveGmailSourcePath();
+        return addSource("gmail", resolveGmailSourcePath(), env);
+    }
+
+    public CoralCommandResult testGmailSource(Map<String, String> env) {
+        return testSource("gmail", env);
+    }
+
+    public CoralCommandResult removeGoogleDriveSource() {
+        return removeSource("google_drive");
+    }
+
+    public CoralCommandResult addGoogleDriveSource(Map<String, String> env) {
+        return addSource("google_drive", resolveGoogleDriveSourcePath(), env);
+    }
+
+    public CoralCommandResult testGoogleDriveSource(Map<String, String> env) {
+        return testSource("google_drive", env);
+    }
+
+    public CoralCommandResult removeJobHuntBuddySource() {
+        return removeSource("jobhuntbuddy");
+    }
+
+    public CoralCommandResult addJobHuntBuddySource(Map<String, String> env) {
+        return addSource("jobhuntbuddy", resolveJobHuntBuddySourcePath(), env);
+    }
+
+    public CoralCommandResult testJobHuntBuddySource(Map<String, String> env) {
+        return testSource("jobhuntbuddy", env);
+    }
+
+    private CoralCommandResult removeSource(String name) {
+        return run(List.of("source", "remove", name), null, 15);
+    }
+
+    private CoralCommandResult addSource(String name, Path sourcePath, Map<String, String> env) {
         if (!Files.isRegularFile(sourcePath)) {
             return new CoralCommandResult(
                     false,
-                    "Gmail Coral source file not found at " + sourcePath.toAbsolutePath(),
+                    name + " Coral source file not found at " + sourcePath.toAbsolutePath(),
                     -1
             );
         }
         // Refresh keychain secret so a new token replaces any stale one.
-        removeGmailSource();
+        removeSource(name);
         return run(List.of("source", "add", "--file", sourcePath.toString()), env, 30);
     }
 
-    public CoralCommandResult testGmailSource(Map<String, String> env) {
-        return run(List.of("source", "test", "gmail"), env, 20);
+    private CoralCommandResult testSource(String name, Map<String, String> env) {
+        return run(List.of("source", "test", name), env, 20);
     }
 
     public Path resolveGmailSourcePath() {
+        return resolveSourcePath(gmailSourceFile, "gmail.yaml");
+    }
+
+    public Path resolveGoogleDriveSourcePath() {
+        return resolveSourcePath(googleDriveSourceFile, "google_drive.yaml");
+    }
+
+    public Path resolveJobHuntBuddySourcePath() {
+        return resolveSourcePath(jobHuntBuddySourceFile, "jobhuntbuddy.yaml");
+    }
+
+    private Path resolveSourcePath(String configuredPath, String fileName) {
         Path cwd = Path.of(System.getProperty("user.dir")).toAbsolutePath().normalize();
         List<Path> candidates = new ArrayList<>();
-        if (gmailSourceFile != null && !gmailSourceFile.isBlank()) {
-            candidates.add(Path.of(gmailSourceFile));
+        if (configuredPath != null && !configuredPath.isBlank()) {
+            candidates.add(Path.of(configuredPath));
         }
-        candidates.add(cwd.resolve("coral-sources").resolve("gmail.yaml"));
-        candidates.add(cwd.resolve("..").resolve("coral-sources").resolve("gmail.yaml"));
+        candidates.add(cwd.resolve("coral-sources").resolve(fileName));
+        candidates.add(cwd.resolve("..").resolve("coral-sources").resolve(fileName));
         if (cwd.getParent() != null) {
-            candidates.add(cwd.getParent().resolve("coral-sources").resolve("gmail.yaml"));
+            candidates.add(cwd.getParent().resolve("coral-sources").resolve(fileName));
         }
         for (Path candidate : candidates) {
             Path resolved = candidate.toAbsolutePath().normalize();

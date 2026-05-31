@@ -11,220 +11,656 @@ import {
   Sparkles,
   Trophy,
   Zap,
+  Mail,
+  CheckCircle2,
+  TrendingUp,
+  Target,
 } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
 
 const judgingSignals = [
   {
     icon: Anchor,
     title: 'Potential Impact',
     text: 'Job seekers lose track of applications because updates are scattered across Gmail, job boards, resumes, and notes. JobHuntBuddy turns that scattered trail into one calm command center.',
+    color: '#10b981',
   },
   {
     icon: Sparkles,
     title: 'Creativity & Originality',
     text: 'Instead of asking users to maintain another tracker, the app listens to the tools they already use and rebuilds the job-search timeline from real signals.',
+    color: '#34d399',
   },
   {
     icon: Brain,
     title: 'Learning & Growth',
     text: 'The project explores Coral as a new data layer, using SQL-style retrieval to make personal workflows searchable, explainable, and useful.',
+    color: '#6ee7b7',
   },
   {
     icon: ShieldCheck,
     title: 'Technical Implementation',
     text: 'A Spring Boot backend, React frontend, Gmail intelligence, status inference, and Coral-powered source screens work together as a practical product flow.',
+    color: '#10b981',
   },
   {
     icon: Compass,
     title: 'Aesthetics & UX',
     text: 'The interface is designed for a stressed applicant: quick filters, readable email previews, visible progress, and simple next actions.',
+    color: '#34d399',
   },
   {
     icon: DatabaseZap,
     title: 'Best Use of Coral',
     text: 'Coral helps retrieve data through SQL-like source queries, opening the door to joins across Gmail, local applications, resumes, and company context.',
+    color: '#6ee7b7',
   },
 ];
 
 const productFlow = [
-  { label: 'Gmail', detail: 'Acknowledgements, rejections, interviews, offers, hiring alerts', icon: Inbox },
-  { label: 'Coral', detail: 'Turns connected sources into queryable data', icon: DatabaseZap },
-  { label: 'Agent', detail: 'Infers company, role, status, date, and recommended action', icon: Bot },
-  { label: 'Tracker', detail: 'Shows the job-search story without manual spreadsheet pain', icon: Trophy },
+  { label: 'Gmail', detail: 'Acknowledgements, rejections, interviews, offers, hiring alerts', icon: Inbox, emoji: '📧' },
+  { label: 'Coral', detail: 'Turns connected sources into queryable data', icon: DatabaseZap, emoji: '🪸' },
+  { label: 'Agent', detail: 'Infers company, role, status, date, and recommended action', icon: Bot, emoji: '🤖' },
+  { label: 'Tracker', detail: 'Shows the job-search story without manual spreadsheet pain', icon: Trophy, emoji: '🏆' },
 ];
 
 const benefits = [
-  'No more guessing which companies replied.',
-  'No more manual copy-paste from inbox to tracker.',
-  'Fast category filters for hiring alerts, applications, assessments, interviews, offers, and rejections.',
-  'A reusable foundation for joining email, resume, company, and application data.',
+  { text: 'No more guessing which companies replied.', icon: '🎯' },
+  { text: 'No more manual copy-paste from inbox to tracker.', icon: '✨' },
+  { text: 'Fast category filters for hiring alerts, applications, assessments, interviews, offers, and rejections.', icon: '⚡' },
+  { text: 'A reusable foundation for joining email, resume, company, and application data.', icon: '🔗' },
 ];
 
+function AnimatedCounter({ target, suffix = '' }) {
+  const [count, setCount] = useState(0);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        let start = 0;
+        const step = target / 60;
+        const timer = setInterval(() => {
+          start += step;
+          if (start >= target) { setCount(target); clearInterval(timer); }
+          else setCount(Math.floor(start));
+        }, 16);
+      }
+    }, { threshold: 0.5 });
+    if (ref.current) observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, [target]);
+
+  return <span ref={ref}>{count}{suffix}</span>;
+}
+
 export default function AboutPage() {
+  const [activeFlow, setActiveFlow] = useState(null);
+  const [sqlVisible, setSqlVisible] = useState(false);
+  const sqlRef = useRef(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) setSqlVisible(true);
+    }, { threshold: 0.3 });
+    if (sqlRef.current) observer.observe(sqlRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  const sqlLines = [
+    'SELECT company_name, job_title, status, applied_date',
+    'FROM gmail_job_signals',
+    'JOIN local_applications USING (company_name)',
+    "WHERE status IN ('HIRING', 'OA', 'INTERVIEW')",
+    'ORDER BY applied_date DESC;',
+  ];
+
   return (
-    <div className="relative min-h-screen overflow-hidden px-6 py-8">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-[linear-gradient(90deg,rgba(20,184,166,0.18),rgba(14,165,233,0.14),rgba(245,158,11,0.14))]" />
+    <div className="relative min-h-screen w-full overflow-x-hidden" style={{ background: 'linear-gradient(180deg, #020617 0%, #07130f 50%, #020617 100%)' }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Urbanist:wght@400;600;700;800;900&display=swap');
 
-      <section className="relative mx-auto max-w-7xl">
-        <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-stretch">
-          <div className="surface overflow-hidden p-8">
-            <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-semibold text-teal-800">
-              <Sparkles className="h-4 w-4" />
-              Built for the Coral hackathon
-            </div>
+        * { font-family: 'Urbanist', sans-serif; box-sizing: border-box; }
 
-            <h1 className="max-w-4xl text-5xl font-black leading-tight text-slate-950">
-              JobHuntBuddy is a job-search memory layer powered by everyday inbox signals.
-            </h1>
-            <p className="mt-5 max-w-3xl text-lg leading-8 text-slate-600">
-              It helps applicants understand what happened, what is pending, and what to do next by turning Gmail job updates and Coral-retrieved data into an organized application timeline.
-            </p>
+        @keyframes float-up {
+          0% { opacity: 0; transform: translateY(40px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fade-in {
+          0% { opacity: 0; }
+          100% { opacity: 1; }
+        }
+        @keyframes drift {
+          0%, 100% { transform: translate(0, 0) rotate(0deg); }
+          25% { transform: translate(30px, -30px) rotate(90deg); }
+          50% { transform: translate(0, -60px) rotate(180deg); }
+          75% { transform: translate(-30px, -30px) rotate(270deg); }
+        }
+        @keyframes orbit-dot {
+          0% { transform: rotate(0deg) translateX(90px) rotate(0deg); }
+          100% { transform: rotate(360deg) translateX(90px) rotate(-360deg); }
+        }
+        @keyframes pulse-ring {
+          0%, 100% { transform: scale(1); opacity: 0.4; }
+          50% { transform: scale(1.12); opacity: 0.8; }
+        }
+        @keyframes radar-sweep {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        @keyframes shimmer {
+          0% { background-position: -200% center; }
+          100% { background-position: 200% center; }
+        }
+        @keyframes type-in {
+          0% { opacity: 0; transform: translateX(-8px); }
+          100% { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+        @keyframes bounce-in {
+          0% { opacity: 0; transform: scale(0.5); }
+          70% { transform: scale(1.05); }
+          100% { opacity: 1; transform: scale(1); }
+        }
 
-            <div className="mt-8 flex flex-wrap gap-3">
-              <a
-                href="https://www.linkedin.com/in/shraddha-jadhav-a9a762224"
-                target="_blank"
-                rel="noreferrer"
-                className="action-button"
-              >
-                <ExternalLink className="h-4 w-4" />
-                Created by Shraddha Jadhav
-                <ExternalLink className="h-4 w-4" />
-              </a>
-              <a href="#coral-story" className="secondary-button">
-                See Coral flow
-                <ArrowRight className="h-4 w-4" />
-              </a>
+        .gradient-text {
+          background: linear-gradient(135deg, #10b981 0%, #34d399 50%, #6ee7b7 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        }
+
+        .shimmer-text {
+          background: linear-gradient(90deg, #10b981, #6ee7b7, #10b981, #34d399);
+          background-size: 200% auto;
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+          animation: shimmer 3s linear infinite;
+        }
+
+        .glass-panel {
+          background: rgba(2, 6, 23, 0.7);
+          border: 1px solid rgba(16, 185, 129, 0.15);
+          backdrop-filter: blur(20px);
+          border-radius: 24px;
+        }
+
+        .glass-card {
+          background: rgba(16, 185, 129, 0.06);
+          border: 1px solid rgba(16, 185, 129, 0.2);
+          backdrop-filter: blur(12px);
+          border-radius: 18px;
+          transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .glass-card:hover {
+          background: rgba(16, 185, 129, 0.12);
+          border-color: rgba(16, 185, 129, 0.5);
+          transform: translateY(-6px);
+          box-shadow: 0 20px 50px rgba(16, 185, 129, 0.15);
+        }
+
+        .glow-orb {
+          position: absolute;
+          border-radius: 50%;
+          filter: blur(80px);
+          animation: drift 20s ease-in-out infinite;
+          pointer-events: none;
+        }
+
+        .flow-pipe {
+          position: relative;
+          transition: all 0.4s ease;
+        }
+
+        .flow-pipe:hover {
+          transform: translateY(-8px) scale(1.04);
+        }
+
+        .flow-pipe.active {
+          border-color: rgba(16, 185, 129, 0.8) !important;
+          background: rgba(16, 185, 129, 0.15) !important;
+          box-shadow: 0 0 40px rgba(16, 185, 129, 0.3);
+        }
+
+        .flow-connector {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: rgba(16, 185, 129, 0.5);
+          font-size: 20px;
+        }
+
+        .radar-container {
+          position: relative;
+          width: 200px;
+          height: 200px;
+          margin: 0 auto;
+        }
+
+        .radar-ring {
+          position: absolute;
+          border: 1px solid rgba(16, 185, 129, 0.3);
+          border-radius: 50%;
+          animation: pulse-ring 3s ease-in-out infinite;
+        }
+
+        .radar-ring-1 { inset: 0; animation-delay: 0s; }
+        .radar-ring-2 { inset: 20px; animation-delay: 0.5s; }
+        .radar-ring-3 { inset: 40px; animation-delay: 1s; }
+
+        .radar-sweep {
+          position: absolute;
+          inset: 0;
+          border-radius: 50%;
+          background: conic-gradient(from 0deg, transparent 0%, rgba(16, 185, 129, 0.3) 30%, transparent 60%);
+          animation: radar-sweep 4s linear infinite;
+        }
+
+        .radar-center {
+          position: absolute;
+          inset: 50%;
+          transform: translate(-50%, -50%);
+          width: 50px;
+          height: 50px;
+          background: radial-gradient(circle, rgba(16, 185, 129, 0.6), rgba(16, 185, 129, 0.2));
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: 2px solid rgba(16, 185, 129, 0.6);
+        }
+
+        .orbit-dot {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          margin-top: -6px;
+          margin-left: -6px;
+          width: 12px;
+          height: 12px;
+          border-radius: 50%;
+          background: #10b981;
+          box-shadow: 0 0 10px #10b981;
+        }
+
+        .orbit-1 { animation: orbit-dot 4s linear infinite; }
+        .orbit-2 { animation: orbit-dot 6s linear infinite reverse; background: #34d399; box-shadow: 0 0 10px #34d399; }
+        .orbit-3 { animation: orbit-dot 8s linear infinite; background: #6ee7b7; box-shadow: 0 0 10px #6ee7b7; }
+
+        .stat-card {
+          background: rgba(16, 185, 129, 0.08);
+          border: 1px solid rgba(16, 185, 129, 0.25);
+          border-radius: 18px;
+          padding: 20px;
+          text-align: center;
+          transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+          background: rgba(16, 185, 129, 0.15);
+          transform: translateY(-4px);
+          box-shadow: 0 16px 40px rgba(16, 185, 129, 0.2);
+        }
+
+        .sql-line {
+          opacity: 0;
+          animation: type-in 0.4s ease-out forwards;
+        }
+
+        .judging-card {
+          background: rgba(16, 185, 129, 0.06);
+          border: 1px solid rgba(16, 185, 129, 0.15);
+          border-radius: 18px;
+          padding: 20px;
+          transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+          cursor: default;
+          position: relative;
+          overflow: hidden;
+        }
+
+        .judging-card::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: radial-gradient(circle at 0% 0%, rgba(16, 185, 129, 0.15), transparent 60%);
+          opacity: 0;
+          transition: opacity 0.4s;
+        }
+
+        .judging-card:hover {
+          transform: translateY(-8px);
+          border-color: rgba(16, 185, 129, 0.5);
+          box-shadow: 0 24px 60px rgba(16, 185, 129, 0.15);
+        }
+
+        .judging-card:hover::before { opacity: 1; }
+
+        .stagger-1 { animation: float-up 0.8s ease-out 0s backwards; }
+        .stagger-2 { animation: float-up 0.8s ease-out 0.1s backwards; }
+        .stagger-3 { animation: float-up 0.8s ease-out 0.2s backwards; }
+        .stagger-4 { animation: float-up 0.8s ease-out 0.3s backwards; }
+        .stagger-5 { animation: float-up 0.8s ease-out 0.4s backwards; }
+        .stagger-6 { animation: float-up 0.8s ease-out 0.5s backwards; }
+
+        .action-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 12px 22px;
+          border-radius: 12px;
+          font-weight: 700;
+          font-size: 14px;
+          transition: all 0.3s ease;
+          cursor: pointer;
+          text-decoration: none;
+        }
+
+        .action-btn-primary {
+          background: linear-gradient(135deg, #10b981, #059669);
+          color: white;
+          border: none;
+        }
+
+        .action-btn-primary:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 16px 40px rgba(16, 185, 129, 0.4);
+        }
+
+        .action-btn-secondary {
+          background: transparent;
+          color: #34d399;
+          border: 2px solid rgba(16, 185, 129, 0.4);
+        }
+
+        .action-btn-secondary:hover {
+          background: rgba(16, 185, 129, 0.1);
+          border-color: rgba(16, 185, 129, 0.8);
+          transform: translateY(-3px);
+        }
+
+        .pipeline-3d {
+          perspective: 600px;
+        }
+
+        .pipeline-node {
+          transform-style: preserve-3d;
+          transition: transform 0.5s ease;
+        }
+
+        .pipeline-node:hover {
+          transform: rotateY(10deg) rotateX(-5deg) scale(1.05);
+        }
+
+        .benefit-row {
+          display: flex;
+          align-items: flex-start;
+          gap: 14px;
+          padding: 14px 16px;
+          background: rgba(16, 185, 129, 0.05);
+          border: 1px solid rgba(16, 185, 129, 0.12);
+          border-radius: 14px;
+          transition: all 0.3s ease;
+        }
+
+        .benefit-row:hover {
+          background: rgba(16, 185, 129, 0.1);
+          border-color: rgba(16, 185, 129, 0.35);
+          transform: translateX(6px);
+        }
+
+        .tag-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 4px 12px;
+          border-radius: 20px;
+          font-size: 11px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+        }
+      `}</style>
+
+      {/* Background orbs */}
+      <div className="glow-orb" style={{ width: 400, height: 400, top: -100, right: -100, background: 'rgba(16,185,129,0.06)', animationDelay: '0s' }} />
+      <div className="glow-orb" style={{ width: 300, height: 300, bottom: 200, left: -80, background: 'rgba(16,185,129,0.04)', animationDelay: '7s' }} />
+      <div className="glow-orb" style={{ width: 250, height: 250, top: '40%', right: '20%', background: 'rgba(52,211,153,0.04)', animationDelay: '14s' }} />
+
+      <div className="relative z-10 px-4 sm:px-6 py-10 max-w-7xl mx-auto">
+
+        {/* ─── HERO ─── */}
+        <section className="mb-10">
+          <div className="glass-panel p-8 lg:p-12 stagger-1">
+            <div className="grid lg:grid-cols-[1.2fr_0.8fr] gap-10 items-center">
+              <div>
+                <div className="tag-badge mb-6" style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.4)', color: '#34d399' }}>
+                  <Sparkles className="w-3 h-3" />
+                  Built for the Coral Hackathon
+                </div>
+                <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-white leading-tight mb-5">
+                  Job<span className="gradient-text">Hunt</span>Buddy<br />
+                  <span style={{ fontSize: '0.6em', fontWeight: 700, color: 'rgba(148,163,184,0.8)' }}>is a job-search memory layer</span>
+                </h1>
+                <p className="text-base leading-8 mb-8" style={{ color: 'rgba(148,163,184,0.8)', maxWidth: 520 }}>
+                  Powered by everyday inbox signals — it turns Gmail job updates and Coral-retrieved data into an organized application timeline. Know what happened, what's pending, and what to do next.
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  <a href="https://www.linkedin.com/in/shraddha-jadhav-a9a762224" target="_blank" rel="noreferrer" className="action-btn action-btn-primary">
+                    <ExternalLink className="w-4 h-4" />
+                    Created by Shraddha Jadhav
+                  </a>
+                  <a href="#coral-story" className="action-btn action-btn-secondary">
+                    See Coral Flow
+                    <ArrowRight className="w-4 h-4" />
+                  </a>
+                </div>
+              </div>
+
+              {/* Radar visual */}
+              <div className="flex flex-col items-center gap-6">
+                <div className="radar-container">
+                  <div className="radar-ring radar-ring-1" />
+                  <div className="radar-ring radar-ring-2" />
+                  <div className="radar-ring radar-ring-3" />
+                  <div className="radar-sweep" />
+                  <div className="radar-center">
+                    <DatabaseZap className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="orbit-dot orbit-1" />
+                  <div className="orbit-dot orbit-2" />
+                  <div className="orbit-dot orbit-3" />
+                </div>
+                <p className="text-center text-sm font-semibold" style={{ color: 'rgba(52,211,153,0.8)' }}>
+                  From inbox noise → decision-ready signals
+                </p>
+                {/* Mini stats */}
+                <div className="grid grid-cols-3 gap-3 w-full">
+                  {[
+                    { value: 100, suffix: '%', label: 'Auto-tracked' },
+                    { value: 0, suffix: ' sheets', label: 'Manual work' },
+                    { value: 1, suffix: ' place', label: 'Everything in' },
+                  ].map((s, i) => (
+                    <div key={i} className="stat-card">
+                      <div className="text-lg font-black gradient-text">
+                        <AnimatedCounter target={s.value} suffix={s.suffix} />
+                      </div>
+                      <div className="text-xs mt-1" style={{ color: 'rgba(148,163,184,0.6)' }}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
-
-          <div className="surface relative overflow-hidden p-6">
-            <div className="absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,#14b8a6,#0ea5e9,#f59e0b)]" />
-            <div className="about-radar mx-auto mt-2">
-              <div className="about-radar-ring about-radar-ring-one" />
-              <div className="about-radar-ring about-radar-ring-two" />
-              <div className="about-radar-sweep" />
-              <div className="about-radar-core">
-                <DatabaseZap className="h-10 w-10 text-white" />
-              </div>
-              {['Gmail', 'SQL', 'Agent', 'Tracker'].map((item, index) => (
-                <span key={item} className={`about-radar-dot about-radar-dot-${index + 1}`}>
-                  {item}
-                </span>
-              ))}
-            </div>
-            <div className="mt-6 text-center">
-              <h2 className="text-xl font-black text-slate-950">From inbox noise to decision-ready signals</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                The product feels simple because the heavy lifting happens behind the scenes: source retrieval, classification, deduping, and timeline building.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <section id="coral-story" className="mt-8 grid gap-4 lg:grid-cols-4">
-          {productFlow.map(({ label, detail, icon: Icon }, index) => (
-            <div key={label} className="about-flow-card soft-panel p-5" style={{ animationDelay: `${index * 90}ms` }}>
-              <div className="mb-4 grid h-11 w-11 place-items-center rounded-2xl bg-slate-950 text-white">
-                <Icon className="h-5 w-5" />
-              </div>
-              <h3 className="text-lg font-black text-slate-950">{label}</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600">{detail}</p>
-            </div>
-          ))}
         </section>
 
-        <section className="mt-8 grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
-          <div className="surface p-6">
-            <div className="flex items-center gap-3">
-              <div className="grid h-11 w-11 place-items-center rounded-2xl bg-amber-100 text-amber-700">
-                <Zap className="h-5 w-5" />
+        {/* ─── PRODUCT FLOW ─── */}
+        <section id="coral-story" className="mb-10 stagger-2">
+          <div className="mb-5 flex items-center gap-3">
+            <span className="tag-badge" style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981' }}>
+              <Zap className="w-3 h-3" /> How It Works
+            </span>
+          </div>
+          <div className="pipeline-3d">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {productFlow.map(({ label, detail, icon: Icon, emoji }, index) => (
+                <div key={label} className="pipeline-node">
+                  <div
+                    className={`flow-pipe glass-card p-5 cursor-pointer h-full ${activeFlow === index ? 'active' : ''}`}
+                    onMouseEnter={() => setActiveFlow(index)}
+                    onMouseLeave={() => setActiveFlow(null)}
+                    style={{ animationDelay: `${index * 80}ms` }}
+                  >
+                    <div className="text-3xl mb-3">{emoji}</div>
+                    <div className="w-10 h-10 rounded-2xl flex items-center justify-center mb-3" style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)' }}>
+                      <Icon className="w-5 h-5 text-emerald-400" />
+                    </div>
+                    <h3 className="text-lg font-black text-white mb-2">{label}</h3>
+                    <p className="text-sm leading-6" style={{ color: 'rgba(148,163,184,0.7)' }}>{detail}</p>
+                    <div className="mt-3 text-xs font-bold" style={{ color: 'rgba(16,185,129,0.7)' }}>
+                      Step {index + 1} of 4 →
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ─── WHY IT MATTERS + JUDGING ─── */}
+        <section className="mb-10 grid gap-6 lg:grid-cols-[0.85fr_1.15fr] stagger-3">
+
+          {/* Benefits */}
+          <div className="glass-panel p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)' }}>
+                <Zap className="w-5 h-5 text-amber-400" />
               </div>
               <div>
-                <p className="text-xs font-semibold uppercase text-amber-700">Why it matters</p>
-                <h2 className="text-2xl font-black text-slate-950">A tracker that updates from reality</h2>
+                <p className="text-xs font-bold uppercase tracking-widest text-amber-400">Why It Matters</p>
+                <h2 className="text-xl font-black text-white">A tracker that updates from reality</h2>
               </div>
             </div>
-            <div className="mt-6 space-y-3">
-              {benefits.map((benefit) => (
-                <div key={benefit} className="flex gap-3 rounded-2xl border border-slate-200 bg-white/80 p-4">
-                  <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-teal-700" />
-                  <p className="text-sm leading-6 text-slate-700">{benefit}</p>
+            <div className="space-y-3">
+              {benefits.map((b, i) => (
+                <div key={i} className="benefit-row" style={{ animationDelay: `${i * 60}ms` }}>
+                  <span className="text-xl flex-shrink-0">{b.icon}</span>
+                  <p className="text-sm leading-6" style={{ color: 'rgba(226,232,240,0.85)' }}>{b.text}</p>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="surface p-6">
-            <div className="mb-5 flex items-center gap-3">
-              <div className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-950 text-white">
-                <Trophy className="h-5 w-5" />
+          {/* Judging signals */}
+          <div className="glass-panel p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)' }}>
+                <Trophy className="w-5 h-5 text-emerald-400" />
               </div>
               <div>
-                <p className="text-xs font-semibold uppercase text-teal-700">Judge lens</p>
-                <h2 className="text-2xl font-black text-slate-950">Built around the winning signals</h2>
+                <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#10b981' }}>Judge Lens</p>
+                <h2 className="text-xl font-black text-white">Built around the winning signals</h2>
               </div>
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              {judgingSignals.map(({ icon: Icon, title, text }) => (
-                <article key={title} className="group rounded-2xl border border-slate-200 bg-white/80 p-4 transition hover:-translate-y-1 hover:border-teal-200 hover:shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
-                  <Icon className="mb-3 h-5 w-5 text-teal-700 transition group-hover:scale-110" />
-                  <h3 className="font-black text-slate-950">{title}</h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">{text}</p>
+            <div className="grid gap-3 md:grid-cols-2">
+              {judgingSignals.map(({ icon: Icon, title, text, color }) => (
+                <article key={title} className="judging-card">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center mb-3" style={{ background: `${color}22`, border: `1px solid ${color}44` }}>
+                    <Icon className="w-4 h-4" style={{ color }} />
+                  </div>
+                  <h3 className="font-black text-white text-sm mb-1">{title}</h3>
+                  <p className="text-xs leading-5" style={{ color: 'rgba(148,163,184,0.7)' }}>{text}</p>
                 </article>
               ))}
             </div>
           </div>
         </section>
 
-        <section className="my-8 surface overflow-hidden p-6">
-          <div className="grid gap-6 lg:grid-cols-[0.7fr_1.3fr] lg:items-center">
-            <div>
-              <p className="text-xs font-semibold uppercase text-teal-700">The pitch</p>
-              <h2 className="mt-2 text-3xl font-black text-slate-950">Coral makes the job search queryable.</h2>
-              <p className="mt-3 text-sm leading-7 text-slate-600">
+        {/* ─── CORAL SQL PANEL ─── */}
+        <section className="mb-10 glass-panel overflow-hidden stagger-4" ref={sqlRef}>
+          <div className="grid lg:grid-cols-[0.65fr_1.35fr] items-center">
+            <div className="p-8 lg:p-10">
+              <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: '#10b981' }}>The Pitch</p>
+              <h2 className="text-3xl font-black text-white mb-4">
+                Coral makes the job search <span className="shimmer-text">queryable.</span>
+              </h2>
+              <p className="text-sm leading-7" style={{ color: 'rgba(148,163,184,0.75)' }}>
                 JobHuntBuddy uses that idea to transform passive inbox data into active career intelligence: what arrived, what changed, which stage it belongs to, and what deserves attention next.
               </p>
-            </div>
-            <div className="about-query-panel rounded-3xl border border-slate-900 bg-slate-950 p-5 text-sm text-slate-200 shadow-2xl">
-              <div className="mb-4 flex items-center gap-2 text-xs text-slate-400">
-                <span className="h-3 w-3 rounded-full bg-red-400" />
-                <span className="h-3 w-3 rounded-full bg-amber-400" />
-                <span className="h-3 w-3 rounded-full bg-emerald-400" />
-                <span className="ml-2">coral-query.sql</span>
+              <div className="mt-6 flex flex-col gap-3">
+                {[
+                  { icon: Mail, text: 'Reads Gmail signals automatically' },
+                  { icon: DatabaseZap, text: 'Joins data across multiple sources' },
+                  { icon: TrendingUp, text: 'Surfaces actionable insights' },
+                ].map(({ icon: Icon, text }, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <Icon className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                    <span className="text-sm" style={{ color: 'rgba(226,232,240,0.8)' }}>{text}</span>
+                  </div>
+                ))}
               </div>
-              <pre className="overflow-auto whitespace-pre-wrap leading-7">
-{`SELECT company_name, job_title, status, applied_date
-FROM gmail_job_signals
-JOIN local_applications USING (company_name)
-WHERE status IN ('HIRING', 'OA', 'INTERVIEW')
-ORDER BY applied_date DESC;`}
-              </pre>
+            </div>
+
+            <div className="p-6 lg:p-8" style={{ borderLeft: '1px solid rgba(16,185,129,0.1)' }}>
+              <div className="rounded-2xl overflow-hidden" style={{ background: '#0a0f1e', border: '1px solid rgba(16,185,129,0.2)' }}>
+                {/* Window bar */}
+                <div className="flex items-center gap-2 px-5 py-3" style={{ background: 'rgba(16,185,129,0.06)', borderBottom: '1px solid rgba(16,185,129,0.1)' }}>
+                  <span className="w-3 h-3 rounded-full bg-red-400" />
+                  <span className="w-3 h-3 rounded-full bg-amber-400" />
+                  <span className="w-3 h-3 rounded-full bg-emerald-400" />
+                  <span className="ml-3 text-xs font-mono" style={{ color: 'rgba(148,163,184,0.5)' }}>coral-query.sql</span>
+                </div>
+                {/* SQL */}
+                <div className="p-5 font-mono text-sm leading-8">
+                  {sqlLines.map((line, i) => {
+                    const colors = ['#34d399', 'rgba(148,163,184,0.7)', 'rgba(148,163,184,0.7)', '#fbbf24', 'rgba(148,163,184,0.6)'];
+                    return (
+                      <div
+                        key={i}
+                        className="sql-line"
+                        style={{
+                          color: colors[i],
+                          animationDelay: sqlVisible ? `${i * 0.18}s` : '99s',
+                        }}
+                      >
+                        <span style={{ color: 'rgba(16,185,129,0.3)', marginRight: 12, userSelect: 'none', fontSize: 11 }}>{i + 1}</span>
+                        {line}
+                      </div>
+                    );
+                  })}
+                  <div className="mt-3 pt-3" style={{ borderTop: '1px solid rgba(16,185,129,0.1)' }}>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      <span className="text-xs" style={{ color: 'rgba(52,211,153,0.8)' }}>Query executed · 12 results returned</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </section>
 
-        <section className="mb-8 surface p-6">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        {/* ─── GRATITUDE ─── */}
+        <section className="glass-panel p-6 lg:p-8 stagger-5">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
             <div>
-              <p className="text-xs font-semibold uppercase text-teal-700">Gratitude</p>
-              <h2 className="mt-2 text-2xl font-black text-slate-950">Thank you, WeMakeDevs.</h2>
-              <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-600">
+              <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: '#10b981' }}>Gratitude</p>
+              <h2 className="text-2xl font-black text-white mb-2">Thank you, WeMakeDevs. 🙏</h2>
+              <p className="text-sm leading-7 max-w-2xl" style={{ color: 'rgba(148,163,184,0.75)' }}>
                 This project was built with appreciation for WeMakeDevs and the opportunity to learn, experiment, and turn a real job-search problem into a Coral-powered product.
               </p>
             </div>
-            <a
-              href="https://www.wemakedevs.org/"
-              target="_blank"
-              rel="noreferrer"
-              className="secondary-button shrink-0"
-            >
+            <a href="https://www.wemakedevs.org/" target="_blank" rel="noreferrer" className="action-btn action-btn-secondary shrink-0">
               Visit WeMakeDevs
-              <ExternalLink className="h-4 w-4" />
+              <ExternalLink className="w-4 h-4" />
             </a>
           </div>
         </section>
-      </section>
+
+      </div>
     </div>
   );
 }

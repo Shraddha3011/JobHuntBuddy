@@ -1,0 +1,78 @@
+name: google_drive
+version: 0.1.0
+dsl_version: 3
+backend: http
+
+inputs:
+  GOOGLE_DRIVE_API_BASE:
+    kind: variable
+    default: https://www.googleapis.com/drive/v3
+    hint: Google Drive API base URL
+  GOOGLE_DRIVE_ACCESS_TOKEN:
+    kind: secret
+    hint: OAuth access token with drive.metadata.readonly scope
+
+base_url: "{{input.GOOGLE_DRIVE_API_BASE}}"
+
+auth:
+  type: HeaderAuth
+  headers:
+    - name: Authorization
+      from: template
+      template: Bearer {{input.GOOGLE_DRIVE_ACCESS_TOKEN}}
+
+functions:
+  - name: resume_files
+    kind: search
+    description: Find resume-like files in Google Drive.
+    search_limits:
+      default_top_k: 20
+      max_top_k: 100
+      max_calls_per_query: 1
+    args:
+      - name: q
+        required: true
+        bind:
+          arg: q
+      - name: page_size
+        bind:
+          arg: page_size
+    request:
+      method: GET
+      path: /files
+      query:
+        - name: q
+          from: arg
+          key: q
+        - name: pageSize
+          from: arg_int
+          key: page_size
+        - name: fields
+          from: literal
+          value: files(id,name,mimeType,webViewLink,modifiedTime)
+        - name: orderBy
+          from: literal
+          value: modifiedTime desc
+    response:
+      rows_path: [files]
+      row_strategy: direct
+      allow_404_empty: true
+    columns:
+      - name: id
+        type: Utf8
+        description: Google Drive file id.
+      - name: name
+        type: Utf8
+        description: File name.
+      - name: mimeType
+        type: Utf8
+        description: Google Drive MIME type.
+      - name: webViewLink
+        type: Utf8
+        description: Browser link to the file.
+      - name: modifiedTime
+        type: Utf8
+        description: Last modified timestamp.
+
+test_queries:
+  - SELECT id, name FROM google_drive.resume_files(q => "name contains 'resume' and trashed = false", page_size => 1) LIMIT 1

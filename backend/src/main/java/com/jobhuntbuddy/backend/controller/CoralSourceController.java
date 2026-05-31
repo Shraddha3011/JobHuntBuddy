@@ -1,56 +1,72 @@
 package com.jobhuntbuddy.backend.controller;
 
+import com.jobhuntbuddy.backend.entity.User;
+import com.jobhuntbuddy.backend.service.CoralJobHuntExportService;
+import com.jobhuntbuddy.backend.service.CoralRunner;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 @RestController
 @RequestMapping("/api/coral/sources")
+@RequiredArgsConstructor
 public class CoralSourceController {
-    private static final List<String> RECOMMENDED_SOURCES = List.of("github", "google_calendar", "notion", "slack");
+    private static final List<String> RECOMMENDED_SOURCES = List.of(
+            "jobhuntbuddy", "gmail", "google_drive", "google_calendar", "notion", "github", "slack"
+    );
+
+    private final CoralRunner coralRunner;
+    private final CoralJobHuntExportService exportService;
 
     @GetMapping
     public ResponseEntity<Map<String, Object>> sources() {
+        CoralRunner.CoralCommandResult version = coralRunner.version();
+        CoralRunner.CoralCommandResult configured = coralRunner.listSources();
+        CoralRunner.CoralCommandResult available = coralRunner.discoverSources();
+
+        Map<String, Object> health = new LinkedHashMap<>();
+        health.put("cliAvailable", version.success());
+        health.put("version", version.output());
+        health.put("jobhuntbuddy", sourceInstalled(configured.output(), "jobhuntbuddy"));
+        health.put("gmail", sourceInstalled(configured.output(), "gmail"));
+        health.put("google_drive", sourceInstalled(configured.output(), "google_drive"));
+        health.put("multiSourceReady", sourceInstalled(configured.output(), "jobhuntbuddy")
+                && (sourceInstalled(configured.output(), "gmail") || sourceInstalled(configured.output(), "google_drive")));
+
         return ResponseEntity.ok(Map.of(
-                "configured", runCoral("source", "list"),
-                "available", runCoral("source", "discover"),
-                "recommended", RECOMMENDED_SOURCES
+                "configured", output(configured),
+                "available", output(available),
+                "recommended", RECOMMENDED_SOURCES,
+                "health", health
         ));
     }
 
     @GetMapping("/{name}")
     public ResponseEntity<Map<String, Object>> sourceInfo(@PathVariable String name) {
-        return ResponseEntity.ok(Map.of("name", name, "info", runCoral("source", "info", name)));
+        CoralRunner.CoralCommandResult info = coralRunner.sourceInfo(name);
+        return ResponseEntity.ok(Map.of("name", name, "info", output(info), "success", info.success()));
     }
 
-    private String runCoral(String... args) {
-        try {
-            String[] command = new String[args.length + 1];
-            command[0] = "coral";
-            System.arraycopy(args, 0, command, 1, args.length);
+    @PostMapping("/jobhuntbuddy/sync")
+    public ResponseEntity<Map<String, Object>> syncJobHuntBuddy(@AuthenticationPrincipal User user) {
+        CoralJobHuntExportService.SyncResult sync = exportService.syncLocalSource(user);
+        return ResponseEntity.ok(sync.toMap());
+    }
 
-            ProcessBuilder pb = new ProcessBuilder(command);
-            pb.redirectErrorStream(true);
-            Process proc = pb.start();
-            boolean finished = proc.waitFor(10, TimeUnit.SECONDS);
-            String output = new String(proc.getInputStream().readAllBytes());
-            if (!finished) {
-                proc.destroyForcibly();
-                return "Coral command timed out.";
-            }
-            return output.isBlank() ? "No output." : output;
-        } catch (IOException e) {
-            return "Coral CLI is not available on PATH.";
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return "Coral command was interrupted.";
-        }
+    private String output(CoralRunner.CoralCommandResult result) {
+        return result.output() == null || result.output().isBlank() ? "No output." : result.output();
+    }
+
+    private boolean sourceInstalled(String configured, String name) {
+        return configured != null && configured.toLowerCase().contains(name.toLowerCase());
     }
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+export const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.metadata.readonly';
 const GSI_SCRIPT = 'https://accounts.google.com/gsi/client';
 
 function loadGsiScript() {
@@ -18,10 +19,11 @@ function loadGsiScript() {
   });
 }
 
-export function useGoogleGmailAuth(clientId) {
+export function useGoogleGmailAuth(clientId, requestedScope = GMAIL_SCOPE) {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
   const tokenClientRef = useRef(null);
+  const scope = requestedScope || GMAIL_SCOPE;
 
   useEffect(() => {
     if (!clientId) {
@@ -38,7 +40,7 @@ export function useGoogleGmailAuth(clientId) {
         }
         tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
           client_id: clientId,
-          scope: GMAIL_SCOPE,
+          scope,
           callback: () => {},
         });
         if (!cancelled) {
@@ -56,7 +58,7 @@ export function useGoogleGmailAuth(clientId) {
     return () => {
       cancelled = true;
     };
-  }, [clientId]);
+  }, [clientId, scope]);
 
   const requestAccessToken = useCallback(() => {
     return new Promise((resolve, reject) => {
@@ -85,5 +87,5 @@ export function useGoogleGmailAuth(clientId) {
     });
   }, [clientId, error]);
 
-  return { ready, error, requestAccessToken, scope: GMAIL_SCOPE };
+  return { ready, error, requestAccessToken, scope };
 }

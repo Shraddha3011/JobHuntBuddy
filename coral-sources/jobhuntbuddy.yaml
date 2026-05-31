@@ -1,0 +1,85 @@
+name: jobhuntbuddy
+version: 0.1.0
+dsl_version: 3
+backend: file
+
+inputs:
+  JOBHUNTBUDDY_DATA_DIR:
+    kind: variable
+    default: file:///tmp/jobhuntbuddy-coral/
+    hint: File URI for exported JobHuntBuddy JSONL data.
+
+tables:
+  - name: applications
+    description: Local JobHuntBuddy applications exported for Coral SQL joins.
+    format: jsonl
+    source:
+      location: "{{input.JOBHUNTBUDDY_DATA_DIR}}"
+      glob: applications.jsonl
+    columns:
+      - name: id
+        type: Int64
+      - name: company_name
+        type: Utf8
+      - name: job_title
+        type: Utf8
+      - name: job_url
+        type: Utf8
+      - name: source_platform
+        type: Utf8
+      - name: status
+        type: Utf8
+      - name: resume_id
+        type: Int64
+      - name: resume_name
+        type: Utf8
+      - name: applied_date
+        type: Utf8
+      - name: last_updated
+        type: Utf8
+      - name: location
+        type: Utf8
+      - name: salary_range
+        type: Utf8
+      - name: is_remote
+        type: Boolean
+      - name: notes
+        type: Utf8
+      - name: has_resume
+        type: Boolean
+      - name: has_job_description
+        type: Boolean
+      - name: has_key_requirements
+        type: Boolean
+      - name: has_job_url
+        type: Boolean
+      - name: days_since_applied
+        type: Int64
+      - name: follow_up_after_days
+        type: Int64
+      - name: follow_up_due
+        type: Boolean
+      - name: is_active
+        type: Boolean
+
+  - name: resumes
+    description: Local JobHuntBuddy resume versions exported for Coral SQL joins.
+    format: jsonl
+    source:
+      location: "{{input.JOBHUNTBUDDY_DATA_DIR}}"
+      glob: resumes.jsonl
+    columns:
+      - name: id
+        type: Int64
+      - name: name
+        type: Utf8
+      - name: description
+        type: Utf8
+      - name: file_url
+        type: Utf8
+      - name: created_at
+        type: Utf8
+
+test_queries:
+  - SELECT company_name, job_title, status FROM jobhuntbuddy.applications LIMIT 1
+  - SELECT name, file_url FROM jobhuntbuddy.resumes LIMIT 1

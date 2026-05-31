@@ -6,6 +6,8 @@ import com.jobhuntbuddy.backend.entity.Status;
 import com.jobhuntbuddy.backend.entity.User;
 import com.jobhuntbuddy.backend.repository.JobApplicationRepository;
 import com.jobhuntbuddy.backend.repository.ResumeRepository;
+import com.jobhuntbuddy.backend.service.CoralJobHuntExportService;
+import com.jobhuntbuddy.backend.service.CoralRunner;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,6 +32,8 @@ import java.util.stream.Collectors;
 public class AgentController {
     private final JobApplicationRepository appRepo;
     private final ResumeRepository resumeRepo;
+    private final CoralJobHuntExportService exportService;
+    private final CoralRunner coralRunner;
 
     @GetMapping("/briefing")
     public Map<String, Object> briefing(@AuthenticationPrincipal User user) {
@@ -93,12 +97,36 @@ public class AgentController {
         result.put("missingMemory", missingMemory);
         result.put("duplicates", duplicates);
         result.put("resumeUsage", resumeUsage);
+        result.put("coralEvidence", coralEvidence(user));
         result.put("coralSql", Map.of(
-                "dailyBriefing", "SELECT company_name, job_title, status, applied_date, resume_id FROM job_applications WHERE status IN ('APPLIED','OA','INTERVIEW') ORDER BY applied_date ASC",
-                "resumeMemory", "SELECT r.name, COUNT(j.id) AS applications FROM resumes r LEFT JOIN job_applications j ON j.resume_id = r.id GROUP BY r.name ORDER BY applications DESC",
-                "forgottenApplications", "SELECT company_name, job_title FROM job_applications WHERE resume_id IS NULL OR job_description IS NULL OR key_requirements IS NULL"
+                "dailyBriefing", "SELECT company_name, job_title, status, applied_date, resume_id FROM jobhuntbuddy.applications WHERE is_active = true ORDER BY applied_date ASC",
+                "resumeMemory", "SELECT r.name, COUNT(a.id) AS applications FROM jobhuntbuddy.resumes r LEFT JOIN jobhuntbuddy.applications a ON a.resume_id = r.id GROUP BY r.name ORDER BY applications DESC",
+                "forgottenApplications", "SELECT company_name, job_title FROM jobhuntbuddy.applications WHERE has_resume = false OR has_job_description = false OR has_key_requirements = false"
         ));
         return result;
+    }
+
+    private Map<String, Object> coralEvidence(User user) {
+        CoralJobHuntExportService.SyncResult sync = exportService.ensureLocalSource(user);
+        Map<String, Object> evidence = new LinkedHashMap<>();
+        evidence.put("ready", sync.ready());
+        evidence.put("message", sync.message());
+        evidence.put("localSource", sync.toMap());
+        evidence.put("queries", Map.of(
+                "statusCounts", runCoral("SELECT status, COUNT(*) AS total FROM jobhuntbuddy.applications GROUP BY status ORDER BY total DESC"),
+                "followUpQueue", runCoral("SELECT company_name, job_title, days_since_applied FROM jobhuntbuddy.applications WHERE follow_up_due = true ORDER BY days_since_applied DESC LIMIT 5"),
+                "resumeJoin", runCoral("SELECT a.company_name, a.job_title, r.name AS resume_name FROM jobhuntbuddy.applications a LEFT JOIN jobhuntbuddy.resumes r ON a.resume_id = r.id ORDER BY a.applied_date DESC LIMIT 8")
+        ));
+        return evidence;
+    }
+
+    private Map<String, Object> runCoral(String sql) {
+        CoralRunner.CoralCommandResult result = coralRunner.runSqlTable(sql, null);
+        return Map.of(
+                "sql", sql,
+                "success", result.success(),
+                "result", result.output()
+        );
     }
 
     private boolean isActive(JobApplication app) {
